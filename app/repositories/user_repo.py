@@ -1,30 +1,47 @@
-import asyncio
+import json
 from typing import Dict, Optional
+
+import redis.asyncio as redis
 
 from app.repositories.interface import UserRepository
 
 
-class InMemoryUserRepository(UserRepository):
-    """In-Memory Async Implementation of UserRepository Interface"""
+class RedisUserRepository(UserRepository):
+    """Redis-Based Async Implementation of UserRepository Interface"""
 
-    def __init__(self):
-        self._db: Dict[str, dict] = {}
-        self._lock = asyncio.Lock()
+    def __init__(self, redis_url: str):
+        self._redis = redis.from_url(redis_url, decode_responses=True)
+
+    def _user_key(self, username: str) -> str:
+        return f"user:{username}"
 
     async def create_user(self, user: Dict) -> None:
-        async with self._lock:
-            if user["username"] in self._db:
-                raise ValueError("User already exists")
-            self._db[user["username"]] = user
+        key = self._user_key(user["username"])
+
+        # SETNX → only set if not exists (atomic)
+        created = await self._redis.setnx(key, json.dumps(user))
+
+        if not created:
+            raise ValueError("User already exists")
 
     async def get_user(self, username: str) -> Optional[Dict]:
-        async with self._lock:
-            return self._db.get(username)
+        key = self._user_key(username)
+        data = await self._redis.get(key)
+
+        if not data:
+            return None
+
+        return json.loads(data)
 
     async def add_tag(self, username: str, tag: str) -> Dict:
-        async with self._lock:
-            user = self._db.get(username)
-            if not user:
-                raise KeyError("User not found")
-            user["tags"].append(tag)
-            return user
+        key = self._user_key(username)
+
+        data = await self._redis.get(key)
+        if not data:
+            raise KeyError("User not found")
+
+        user = json.loads(data)
+        user["tags"].append(tag)
+
+        await self._redis.set(key, json.dumps(user))
+        return user

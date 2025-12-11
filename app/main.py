@@ -1,21 +1,18 @@
 import asyncio
 import time
-from typing import Annotated, Dict
+from typing import Annotated
 
 from fastapi import Depends, FastAPI, HTTPException, Path
 
 from app.model.users import CreateUserRequest, CreateUserResponse, UserResponse
 from app.repositories.interface import UserRepository
-from app.repositories.user_repo import InMemoryUserRepository
+from app.repositories.user_repo import RedisUserRepository
 
 app = FastAPI()
 
-# Simulated in-memory DB
-users_db: Dict[str, dict] = {}
-db_lock = asyncio.Lock()
-
-# Inject Repository via Dependency Injection
-repo = InMemoryUserRepository()
+REDIS_URL = "redis://localhost:6379"
+# Swap Repository via Dependency Injection(Zero Route Changes)
+repo = RedisUserRepository(REDIS_URL)
 
 
 def get_user_repo() -> UserRepository:
@@ -33,8 +30,6 @@ async def create_user(
     repo: UserRepository = Depends(get_user_repo),
 ):
     await asyncio.sleep(0.2)
-    if payload.username in users_db:
-        raise HTTPException(status_code=400, detail="User already exists")
 
     user = {
         "username": payload.username,
