@@ -1,0 +1,16 @@
+.env/
+venv/
+__pycache__/
+.ipynb_checkpoints
+.DS_Store
+.env
+*.pyc
+.env.local
+
+# Virtual environments
+venv/
+env/
+.venv/
+.myvenv/
+venv/
+myvenv/
