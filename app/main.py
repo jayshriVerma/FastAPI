@@ -1,10 +1,12 @@
 import asyncio
 import time
-from typing import Dict
+from typing import Annotated, Dict
 
 from fastapi import Depends, FastAPI, HTTPException, Path
 
 from app.model.users import CreateUserRequest, CreateUserResponse, UserResponse
+from app.repositories.interface import UserRepository
+from app.repositories.user_repo import InMemoryUserRepository
 
 app = FastAPI()
 
@@ -12,49 +14,61 @@ app = FastAPI()
 users_db: Dict[str, dict] = {}
 db_lock = asyncio.Lock()
 
+# Inject Repository via Dependency Injection
+repo = InMemoryUserRepository()
+
+
+def get_user_repo() -> UserRepository:
+    return repo
+
 
 def get_request_context():
     return time.monotonic()
 
 
-@app.post("/users", response_model= CreateUserResponse)
-async def create_user(payload: CreateUserRequest, start_time=Depends(get_request_context)):
+@app.post("/users", response_model=CreateUserResponse)
+async def create_user(
+    payload: CreateUserRequest,
+    start_time=Depends(get_request_context),
+    repo: UserRepository = Depends(get_user_repo),
+):
     await asyncio.sleep(0.2)
-    async with db_lock:
-        if payload.username in users_db:
-            raise HTTPException(status_code=400, detail="User already exists")
+    if payload.username in users_db:
+        raise HTTPException(status_code=400, detail="User already exists")
 
-        user  = {
-            "username": payload.username,
-            "tags": payload.tags,
-            "created_at": time.monotonic()
-        }
-        users_db[payload.username] = user
-
-    return {
-        "user": user,
-        "processing_time": time.monotonic() - start_time
+    user = {
+        "username": payload.username,
+        "tags": payload.tags,
+        "created_at": time.monotonic(),
     }
+    try:
+        await repo.create_user(user)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="User already exists")
+
+    return {"user": user, "processing_time": time.monotonic() - start_time}
 
 
-@app.get("/users/{username}", response_model= UserResponse)
-async def get_user(username: str = Path(min_length=3, max_length=15)):
+@app.get("/users/{username}", response_model=UserResponse)
+async def get_user(
+    username: Annotated[str, Path(min_length=3, max_length=15)],
+    repo: UserRepository = Depends(get_user_repo),
+):
+
+    user = await repo.get_user(username)
+    if not user:
+        raise HTTPException(status_code=404, detail="Not found")
+
     await asyncio.sleep(0.1)
-    async with db_lock:
-        user = users_db.get(username)
-        if not user:
-            raise HTTPException(status_code=404, detail="Not found")
-
     return user
 
 
-@app.post("/users/{username}/tags", response_model= UserResponse)
-async def add_tag(username: str, tag: str):
-    async with db_lock:
-        user = users_db.get(username)
-        if not user:
-            raise HTTPException(status_code=404, detail="Not found")
-
-        user["tags"].append(tag)
-
-        return user
+@app.post("/users/{username}/tags", response_model=UserResponse)
+async def add_tag(
+    username: str, tag: str, repo: UserRepository = Depends(get_user_repo)
+):
+    try:
+        user = await repo.add_tag(username, tag)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Not found")
+    return user
