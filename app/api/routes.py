@@ -11,8 +11,13 @@ from app.model.users import CreateUserRequest, CreateUserResponse, UserResponse
 from app.repositories.interface import UserRepository
 from app.repositories.user_repo import RedisUserRepository
 
+load_dotenv()
 router = APIRouter()
-REDIS_URL = "redis://localhost:6379/0"
+
+REDIS_URL = os.getenv("REDIS_URL")
+if REDIS_URL is None:
+    raise RuntimeError("REDIS_URL environment variable is missing!")
+
 repo = RedisUserRepository(redis_url=REDIS_URL)
 
 

@@ -4,7 +4,12 @@ from dotenv import load_dotenv
 from fastapi import Depends, HTTPException, status
 from fastapi.security import APIKeyHeader
 
-VALID_KEYS = ["abc123"]
+load_dotenv()
+
+VALID_KEYS = [
+    k.strip()
+    for k in os.getenv("VALID_API_KEYS", "secret-key-1,secret-key-2").split(",")
+]
 
 api_key_scheme = APIKeyHeader(name="X-API-Key", auto_error=False)
 

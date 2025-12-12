@@ -6,8 +6,17 @@ from app.middleware.rate_limit import RedisRateLimitMiddleware
 
 app = FastAPI()
 app.include_router(user_router)
+from dotenv import load_dotenv
 
-REDIS_URL = "redis://localhost:6379/0"
+load_dotenv()
+
+import os
+
+print("ENV CHECK:", os.getenv("VALID_API_KEYS", "").split(","))
+
+# REDIS_URL = "redis://localhost:6379/0"
+REDIS_URL = os.getenv("REDIS_URL", "")
+print("REDIS_URL:", REDIS_URL)
 
 # create redis client at module level (safe for single-process dev)
 redis_client = Redis.from_url(REDIS_URL, decode_responses=True)
