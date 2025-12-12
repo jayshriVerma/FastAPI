@@ -9,7 +9,7 @@ from app.repositories.interface import UserRepository
 class RedisUserRepository(UserRepository):
     """Redis-Based Async Implementation of UserRepository Interface"""
 
-    def __init__(self, redis_url: str):
+    def __init__(self, *, redis_url: str):
         self._redis = redis.from_url(redis_url, decode_responses=True)
 
     def _user_key(self, username: str) -> str:
@@ -45,3 +45,23 @@ class RedisUserRepository(UserRepository):
 
         await self._redis.set(key, json.dumps(user))
         return user
+
+    async def list_users(self) -> Dict[str, Dict]:
+        users: Dict[str, Dict] = {}
+        # use SCAN to iterate over keys(does not block Redis like KEYS)
+        cursor = "0"
+
+        while True:
+            cursor, keys = await self._redis.scan(
+                cursor=cursor, match="user:*", count=100
+            )
+            for key in keys:
+                value = await self._redis.get(key)
+                if value:
+                    username = key.split(":", 1)[1]
+                    users[username] = json.loads(value)
+
+            if cursor == 0:  # scan complete
+                break
+
+        return users

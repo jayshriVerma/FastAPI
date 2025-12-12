@@ -1,17 +1,19 @@
 import asyncio
+import os
 import time
 from typing import Annotated
 
+from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, HTTPException, Path, Request
 
+from app.dependencies.security import get_api_key
 from app.model.users import CreateUserRequest, CreateUserResponse, UserResponse
 from app.repositories.interface import UserRepository
 from app.repositories.user_repo import RedisUserRepository
 
 router = APIRouter()
 REDIS_URL = "redis://localhost:6379/0"
-
-repo = RedisUserRepository(REDIS_URL)
+repo = RedisUserRepository(redis_url=REDIS_URL)
 
 
 def get_user_repo() -> UserRepository:
@@ -50,10 +52,18 @@ async def create_user(
     return {"user": user, "processing_time": time.monotonic() - start_time}
 
 
+@router.get("/users")
+async def list_users(
+    repo: UserRepository = Depends(get_user_repo), api_key: str = Depends(get_api_key)
+):
+    return {"users": await repo.list_users()}
+
+
 @router.get("/users/{username}", response_model=UserResponse)
 async def get_user(
     username: Annotated[str, Path(min_length=3, max_length=15)],
     repo: UserRepository = Depends(get_user_repo),
+    api_key: str = Depends(get_api_key),
 ):
 
     user = await repo.get_user(username)

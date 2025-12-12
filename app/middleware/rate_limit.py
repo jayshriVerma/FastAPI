@@ -69,12 +69,28 @@ class RedisRateLimitMiddleware(BaseHTTPMiddleware):
             self._sha = await self.redis.script_load(LUA_SCRIPT)
 
     async def dispatch(self, request: Request, call_next):
+        # Skip rate limiting for docs and openapi paths
+        # whitelist all swagger/redoc resources
+        PUBLIC_PATHS = {
+            "/docs",
+            "/openapi.json",
+            "/redoc",
+            "/favicon.ico",
+            "/swagger-ui-bundle.js",
+            "/swagger-ui-init.js",
+            "/swagger-ui.css",
+        }
+        if request.url.path in PUBLIC_PATHS:
+            return await call_next(request)
+
         redis = request.app.state.redis
-        # await self._ensure_script()
         if not hasattr(self, "_sha") or self._sha is None:
             self._sha = await redis.script_load(LUA_SCRIPT)
         identifier = request.client.host if request.client else "unknown"
-        key = f"rl:{identifier}"
+        api_key = request.headers.get("X-API-KEY")
+        print("API Key:", api_key)
+        key = f"rl:{api_key}" if api_key else f"rl:{identifier}"
+        print("Key:", key)
 
         now = (
             time.time()
@@ -124,10 +140,3 @@ class RedisRateLimitMiddleware(BaseHTTPMiddleware):
         # allowed
         response = await call_next(request)
         return response
-
-# INFO:     127.0.0.1:57219 - "GET /docs HTTP/1.1" 200 OK
-# Redis key: rl:127.0.0.1
-# now: 1765493626.7064223 <class 'float'>
-# window: 10 <class 'int'>
-# max_calls: 5 <class 'int'>
-# Connected Redis: <redis.asyncio.client.Redis(<redis.asyncio.connection.ConnectionPool(<redis.asyncio.connection.Connection(decode_responses=True,host=localhost,port=6379,db=0)>)>)>
