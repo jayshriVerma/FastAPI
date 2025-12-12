@@ -1,23 +1,20 @@
 import asyncio
-import os
 import time
+from datetime import datetime, timezone
 from typing import Annotated
 
-from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, HTTPException, Path, Request
 
 from app.dependencies.security import get_api_key
 from app.model.users import CreateUserRequest, CreateUserResponse, UserResponse
 from app.repositories.interface import UserRepository
 from app.repositories.user_repo import RedisUserRepository
+from settings import settings
 
-load_dotenv()
-router = APIRouter()
+health_router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_api_key)])
 
-REDIS_URL = os.getenv("REDIS_URL")
-if REDIS_URL is None:
-    raise RuntimeError("REDIS_URL environment variable is missing!")
-
+REDIS_URL = settings.redis_url
 repo = RedisUserRepository(redis_url=REDIS_URL)
 
 
@@ -29,7 +26,7 @@ def get_request_context():
     return time.monotonic()
 
 
-@router.get("/health")
+@health_router.get("/health")
 async def health(request: Request):
     redis = request.app.state.redis
     await redis.ping()
@@ -47,7 +44,7 @@ async def create_user(
     user = {
         "username": payload.username,
         "tags": payload.tags,
-        "created_at": time.monotonic(),
+        "created_at": datetime.now(timezone.utc).isoformat(),
     }
     try:
         await repo.create_user(user)
@@ -58,9 +55,7 @@ async def create_user(
 
 
 @router.get("/users")
-async def list_users(
-    repo: UserRepository = Depends(get_user_repo), api_key: str = Depends(get_api_key)
-):
+async def list_users(repo: UserRepository = Depends(get_user_repo)):
     return {"users": await repo.list_users()}
 
 
@@ -68,7 +63,6 @@ async def list_users(
 async def get_user(
     username: Annotated[str, Path(min_length=3, max_length=15)],
     repo: UserRepository = Depends(get_user_repo),
-    api_key: str = Depends(get_api_key),
 ):
 
     user = await repo.get_user(username)
@@ -88,3 +82,11 @@ async def add_tag(
     except KeyError:
         raise HTTPException(status_code=404, detail="Not found")
     return user
+
+
+@router.delete("/users/{username}", status_code=204)
+async def delete_user(username: str, repo: UserRepository = Depends(get_user_repo)):
+    try:
+        await repo.delete_user(username)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Not found")

@@ -1,22 +1,17 @@
-from fastapi import Depends, FastAPI, Path
+from fastapi import FastAPI
 from redis.asyncio import Redis
 
+from app.api.routes import health_router
 from app.api.routes import router as user_router
 from app.middleware.rate_limit import RedisRateLimitMiddleware
+from settings import settings
 
 app = FastAPI()
-app.include_router(user_router)
-from dotenv import load_dotenv
+app.include_router(user_router)  # HAS AUTH
+app.include_router(health_router)  # NO AUTH
 
-load_dotenv()
 
-import os
-
-print("ENV CHECK:", os.getenv("VALID_API_KEYS", "").split(","))
-
-# REDIS_URL = "redis://localhost:6379/0"
-REDIS_URL = os.getenv("REDIS_URL", "")
-print("REDIS_URL:", REDIS_URL)
+REDIS_URL = settings.redis_url
 
 # create redis client at module level (safe for single-process dev)
 redis_client = Redis.from_url(REDIS_URL, decode_responses=True)

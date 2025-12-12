@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import List
 
 from pydantic import BaseModel, Field
@@ -12,7 +12,7 @@ class CreateUserRequest(BaseModel):
 class UserResponse(BaseModel):
     username: str
     tags: List[str]
-    created_at: float = datetime.now(timezone.utc).isoformat()
+    created_at: datetime
 
 
 class CreateUserResponse(BaseModel):

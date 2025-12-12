@@ -1,15 +1,9 @@
-import os
-
-from dotenv import load_dotenv
 from fastapi import Depends, HTTPException, status
 from fastapi.security import APIKeyHeader
 
-load_dotenv()
+from settings import settings
 
-VALID_KEYS = [
-    k.strip()
-    for k in os.getenv("VALID_API_KEYS", "secret-key-1,secret-key-2").split(",")
-]
+VALID_KEYS = settings.VALID_API_KEYS.split(",")
 
 api_key_scheme = APIKeyHeader(name="X-API-Key", auto_error=False)
 

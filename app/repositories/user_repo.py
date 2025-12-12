@@ -65,3 +65,9 @@ class RedisUserRepository(UserRepository):
                 break
 
         return users
+
+    async def delete_user(self, username: str) -> None:
+        key = self._user_key(username)
+        result = await self._redis.delete(key)
+        if result == 0:
+            raise KeyError("User not found")
