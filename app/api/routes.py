@@ -4,9 +4,10 @@ from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Request
+from pydantic import ValidationError
 
 from app.dependencies.security import get_api_key
-from app.model.users import CreateUserRequest, CreateUserResponse, UserResponse
+from app.model.users import CreateUserRequest, CreateUserResponse, TagsParam, UserResponse, UsernameParam
 from app.repositories.interface import UserRepository
 from app.repositories.user_repo import RedisUserRepository
 from settings import settings
@@ -40,7 +41,6 @@ async def create_user(
     repo: UserRepository = Depends(get_user_repo),
 ):
     await asyncio.sleep(0.2)
-
     user = {
         "username": payload.username,
         "tags": payload.tags,
@@ -64,8 +64,8 @@ async def get_user(
     username: Annotated[str, Path(min_length=3, max_length=15)],
     repo: UserRepository = Depends(get_user_repo),
 ):
-
-    user = await repo.get_user(username)
+    data = UsernameParam(username=username)
+    user = await repo.get_user(data.username)
     if not user:
         raise HTTPException(status_code=404, detail="Not found")
 
@@ -75,18 +75,29 @@ async def get_user(
 
 @router.post("/users/{username}/tags", response_model=UserResponse)
 async def add_tag(
-    username: str, tag: str, repo: UserRepository = Depends(get_user_repo)
+    username: str, payload: TagsParam, repo: UserRepository = Depends(get_user_repo)
 ):
-    try:
-        user = await repo.add_tag(username, tag)
-    except KeyError:
+    data = UsernameParam(username=username)
+    user = await repo.get_user(data.username)
+    if user is None:
         raise HTTPException(status_code=404, detail="Not found")
-    return user
 
+    candidate_tags = user["tags"] + payload.tags
+    try:
+        validated = TagsParam(tags=candidate_tags)
+    except ValidationError:
+        raise HTTPException(status_code=422, detail="Invalid tags")
+    updated_user = await repo.add_tag(data.username, validated.tags)
+    return {
+        "username": updated_user["username"],
+        "tags": updated_user["tags"],
+        "created_at": updated_user["created_at"],
+    }
 
 @router.delete("/users/{username}", status_code=204)
 async def delete_user(username: str, repo: UserRepository = Depends(get_user_repo)):
+    data = UsernameParam(username=username)
     try:
-        await repo.delete_user(username)
+        await repo.delete_user(data.username)
     except KeyError:
         raise HTTPException(status_code=404, detail="Not found")

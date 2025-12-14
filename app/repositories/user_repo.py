@@ -33,7 +33,7 @@ class RedisUserRepository(UserRepository):
 
         return json.loads(data)
 
-    async def add_tag(self, username: str, tag: str) -> Dict:
+    async def add_tag(self, username: str, tags: list[str]) -> Dict:
         key = self._user_key(username)
 
         data = await self._redis.get(key)
@@ -41,7 +41,7 @@ class RedisUserRepository(UserRepository):
             raise KeyError("User not found")
 
         user = json.loads(data)
-        user["tags"].append(tag)
+        user["tags"] = tags
 
         await self._redis.set(key, json.dumps(user))
         return user
