@@ -69,5 +69,19 @@ class RedisUserRepository(UserRepository):
     async def delete_user(self, username: str) -> None:
         key = self._user_key(username)
         result = await self._redis.delete(key)
-        if result == 0:
+        if result == "0":
             raise KeyError("User not found")
+
+
+    async def delete_all(self) -> None:
+        cursor = "0"
+
+        while True:
+            cursor, keys = await self._redis.scan(
+                cursor=cursor, match="user:*", count=100
+            )
+            if keys:
+                await self._redis.delete(*keys)
+            # Redis returns cursor as string "0", not int 0
+            if cursor == "0":  # scan complete
+                break               

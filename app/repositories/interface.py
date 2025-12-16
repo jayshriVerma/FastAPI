@@ -18,6 +18,11 @@ class UserRepository(ABC):
     @abstractmethod
     async def add_tag(self, username: str, tag: str) -> Dict: ...
 
+    @abstractmethod
+    async def list_users(self) -> Dict[str, Dict]: ...
 
-# API does not care where data is stored
-# can replace memory with DB later without touching routes
+    @abstractmethod
+    async def delete_user(self, username: str) -> None: ...
+    
+    @abstractmethod
+    async def delete_all(self) -> None: ...    

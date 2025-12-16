@@ -6,7 +6,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Path, Request
 from pydantic import ValidationError
 
-from app.dependencies.security import get_api_key
+from app.dependencies.security import get_api_key, require_admin
 from app.model.users import CreateUserRequest, CreateUserResponse, TagsParam, UserResponse, UsernameParam
 from app.repositories.interface import UserRepository
 from app.repositories.user_repo import RedisUserRepository
@@ -85,14 +85,15 @@ async def add_tag(
     candidate_tags = user["tags"] + payload.tags
     try:
         validated = TagsParam(tags=candidate_tags)
-    except ValidationError:
-        raise HTTPException(status_code=422, detail="Invalid tags")
+    except ValidationError as e:
+        raise HTTPException(status_code=422, detail=e.errors()[0]["msg"])
     updated_user = await repo.add_tag(data.username, validated.tags)
     return {
         "username": updated_user["username"],
         "tags": updated_user["tags"],
         "created_at": updated_user["created_at"],
     }
+
 
 @router.delete("/users/{username}", status_code=204)
 async def delete_user(username: str, repo: UserRepository = Depends(get_user_repo)):
@@ -101,3 +102,9 @@ async def delete_user(username: str, repo: UserRepository = Depends(get_user_rep
         await repo.delete_user(data.username)
     except KeyError:
         raise HTTPException(status_code=404, detail="Not found")
+
+
+@router.delete("/admin/users",dependencies=[Depends(require_admin)])
+async def delete_all_users(repo: UserRepository = Depends(get_user_repo)):
+    await repo.delete_all()
+

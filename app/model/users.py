@@ -42,6 +42,7 @@ class UserResponse(BaseModel):
     tags: list[str]
     created_at: datetime
 
+
 class CreateUserResponse(BaseModel):
     user: UserResponse
     processing_time: float
