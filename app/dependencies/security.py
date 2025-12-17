@@ -1,6 +1,5 @@
 from fastapi import Depends, HTTPException, status
 from fastapi.security import APIKeyHeader
-
 from settings import settings
 
 VALID_KEYS = settings.VALID_API_KEYS
@@ -23,4 +22,7 @@ async def get_api_key(api_key: str = Depends(api_key_scheme)):
 
 def require_admin(role: str = Depends(get_api_key)):
     if role != "admin":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required",)
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required",
+        )

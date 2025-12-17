@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Optional
 
 import redis.asyncio as redis
@@ -72,9 +73,8 @@ class RedisUserRepository(UserRepository):
         if result == "0":
             raise KeyError("User not found")
 
-
     async def delete_all(self) -> None:
-        cursor = "0"
+        cursor = 0
 
         while True:
             cursor, keys = await self._redis.scan(
@@ -83,5 +83,49 @@ class RedisUserRepository(UserRepository):
             if keys:
                 await self._redis.delete(*keys)
             # Redis returns cursor as string "0", not int 0
-            if cursor == "0":  # scan complete
-                break               
+            if cursor == 0:  # scan complete
+                break
+
+    async def delete_inactive_users(self, inactive_since: float) -> int:
+        """Delete users who have not been active since the given timestamp.
+        Returns the number of users deleted.
+        """
+        deleted_count = 0
+        cursor = 0
+
+        while True:
+            cursor, keys = await self._redis.scan(
+                cursor=cursor, match="user:*", count=100
+            )
+            for key in keys:
+                value = await self._redis.get(key)
+                if value:
+                    user = json.loads(value)
+                    raw = user.get("last_active")
+
+                    if (
+                        raw is None
+                    ):  # Works with: old ISO strings,new float timestamps,missing values
+                        last_active = 0.0
+                    elif isinstance(raw, (int, float)):
+                        last_active = float(raw)
+                    else:
+                        # ISO string → timestamp
+                        last_active = datetime.fromisoformat(raw).timestamp()
+
+                    if last_active < inactive_since:
+                        await self._redis.delete(key)
+                        deleted_count += 1
+
+            if cursor == 0:  # scan complete
+                break
+
+        return deleted_count
+
+    async def touch_user(self, username: str) -> None:
+        user = await self.get_user(username)
+        if not user:
+            return
+
+        user["last_active"] = datetime.now(timezone.utc).isoformat()
+        await self._redis.set(self._user_key(username), json.dumps(user))

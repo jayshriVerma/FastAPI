@@ -3,15 +3,15 @@ from redis.asyncio import Redis
 
 from app.api.routes import health_router
 from app.api.routes import router as user_router
+from app.core.config import settings
 from app.middleware.rate_limit import RedisRateLimitMiddleware
-from settings import settings
 
 app = FastAPI()
 app.include_router(user_router)  # HAS AUTH
 app.include_router(health_router)  # NO AUTH
 
 
-REDIS_URL = settings.redis_url
+REDIS_URL = settings.REDIS_URL
 
 # create redis client at module level (safe for single-process dev)
 redis_client = Redis.from_url(REDIS_URL, decode_responses=True)
