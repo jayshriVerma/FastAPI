@@ -1,9 +1,12 @@
 import asyncio
+import json
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Header, Path, Query, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 from settings import settings
 
@@ -44,21 +47,49 @@ async def health(request: Request):
 @router.post("/users", response_model=CreateUserResponse)
 async def create_user(
     payload: CreateUserRequest,
+    request: Request,
+    idempotency_key: str = Header(..., alias="Idempotency-Key"),
     start_time=Depends(get_request_context),
     repo: UserRepository = Depends(get_user_repo),
 ):
-    await asyncio.sleep(0.2)
+    idemp_key = request.headers.get("Idempotency-Key")
+    api_key = request.headers.get("X-API-Key")
+
+    if not idemp_key:
+        raise HTTPException(400, "Idempotency-Key required")
+
+    redis = request.app.state.redis
+    cache_key = f"idemp:{api_key}:{idempotency_key}:POST:/users"
+    print(cache_key)
+    # check for Idempotency FIRST
+    cached = await redis.get(cache_key)
+    print(cached)
+    if cached:
+        cached_data = json.loads(cached)
+        return JSONResponse(
+            status_code=cached_data["status"],
+            content=cached_data["body"],
+        )
+
+    user = await repo.get_user(payload.username)
+    if user:
+        raise HTTPException(409, "User already exists")
     user = {
-        "username": payload.username,
+       "username": payload.username,
         "tags": payload.tags,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
-    try:
-        await repo.create_user(user)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="User already exists")
-    await repo.touch_user(payload.username)
-    return {"user": user, "processing_time": time.monotonic() - start_time}
+    await repo.create_user(user)
+    response ={"user": user, "processing_time": time.monotonic() - start_time}
+    # cache only valid responses
+    validated_response = CreateUserResponse(**response)
+    encoded = jsonable_encoder(validated_response)
+    await redis.setex(
+        cache_key,
+        300,  # 5 minutes
+        json.dumps({"status": 201, "body": encoded}),
+    )
+    return validated_response
 
 
 @router.get("/users")
@@ -66,10 +97,11 @@ async def list_users(repo: UserRepository = Depends(get_user_repo)):
     return {"users": await repo.list_users()}
 
 
-@router.get("/users/{username}", response_model=UserResponse)
+@router.get("/users/{username}", response_model=CreateUserResponse)
 async def get_user(
     username: Annotated[str, Path(min_length=3, max_length=15)],
     repo: UserRepository = Depends(get_user_repo),
+    start_time=Depends(get_request_context)
 ):
     data = UsernameParam(username=username)
     user = await repo.get_user(data.username)
@@ -77,7 +109,8 @@ async def get_user(
         raise HTTPException(status_code=404, detail="Not found")
     await repo.touch_user(data.username)
     await asyncio.sleep(0.1)
-    return user
+    response ={"user": user, "processing_time": time.monotonic() - start_time}
+    return response
 
 
 @router.post("/users/{username}/tags", response_model=UserResponse)
@@ -94,14 +127,9 @@ async def add_tag(
         validated = TagsParam(tags=candidate_tags)
     except ValidationError as e:
         raise HTTPException(status_code=422, detail=e.errors()[0]["msg"])
-    updated_user = await repo.add_tag(data.username, validated.tags)
+    await repo.add_tag(data.username, validated.tags)
     await repo.touch_user(data.username)
     user = await repo.get_user(data.username)
-    # return {
-    #     "username": updated_user["username"],
-    #     "tags": updated_user["tags"],
-    #     "created_at": updated_user["created_at"],
-    # }
     return user
 
 
@@ -128,7 +156,6 @@ async def delete_inactive_users(
     inactive_since: int = Query(..., ge=1, description="Days of inactivity"),
     repo: UserRepository = Depends(get_user_repo),
 ):
-    # cutoff_time = time.time() - inactive_since * 86400
     cutoff_time = time.time() - inactive_since * 86400
     deleted_count = await repo.delete_inactive_users(cutoff_time)
     return {"deleted_count": deleted_count}

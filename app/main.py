@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from redis.asyncio import Redis
 
 from app.api.routes import health_router
@@ -33,3 +33,9 @@ async def shutdown_event():
 app.add_middleware(
     RedisRateLimitMiddleware, redis_client=redis_client, max_calls=5, window_seconds=10
 )
+
+
+@app.middleware("http")
+async def capture_request_body(request: Request, call_next):
+    request.scope["_body"] = await request.body()
+    return await call_next(request)
