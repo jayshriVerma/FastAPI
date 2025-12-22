@@ -4,3 +4,6 @@ black
 redis
 python-dotenv
 pydantic-settings
+pytest 
+pytest-asyncio 
+httpx

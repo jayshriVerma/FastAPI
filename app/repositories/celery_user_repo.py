@@ -1,7 +1,5 @@
-# celery_user_repo.py
 import json
 from datetime import datetime
-from typing import Dict
 
 import redis
 
